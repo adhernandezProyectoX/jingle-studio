@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0d14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jingle Studio">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Jingle Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f0d14;--panel:#1a1722;--panel2:#231f2e;--line:#332d42;--txt:#f3eff8;--mut:#a79fb6;--acc:#ff7a45;--acc2:#ffb347;--ok:#4fd18b;--err:#ff8f8f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font-family:Inter,system-ui,sans-serif;font-size:15px}
+.wrap{max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 14px 70px}
+.top{display:flex;justify-content:space-between;align-items:center}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:34px;letter-spacing:-.02em;margin:0;line-height:1}
+h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.gear{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:12px;width:42px;height:42px;font-size:19px;cursor:pointer}
+.sub{color:var(--mut);margin:10px 0 0;line-height:1.45}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:14px}
+.card h2{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.n{width:24px;height:24px;border-radius:50%;background:var(--panel2);display:grid;place-items:center;font-size:13px;color:var(--acc2);flex:none}
+textarea,input[type=text],input[type=password]{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:11px 12px;font:inherit;outline:none}
+textarea:focus,input:focus{border-color:var(--acc)}
+textarea{resize:vertical;min-height:88px;line-height:1.45}
+label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:999px;padding:8px 13px;font:inherit;font-size:14px;cursor:pointer}
+.chip.on{background:var(--txt);color:var(--bg);border-color:var(--txt);font-weight:600}
+.btn{border-radius:14px;padding:12px 16px;font:inherit;font-weight:600;cursor:pointer;background:var(--panel2);color:var(--txt);border:1px solid var(--line);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn.main{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#1b0f08;border:0;width:100%;font-size:16px;margin-top:16px;padding:15px}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.sm{padding:7px 11px;font-size:13px;border-radius:10px}
+.msg{font-size:13.5px;color:var(--mut);margin-top:10px;min-height:1em;line-height:1.45}
+.msg.err{color:var(--err)}
+.msg.ok{color:var(--ok)}
+#lyrics{min-height:280px;font-size:14.5px}
+#caption{min-height:64px;font-family:ui-monospace,monospace;font-size:13px;color:var(--acc2)}
+.prog{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:12px}
+.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s}
+.prog.ind i{width:35%;animation:ind 1.3s infinite ease-in-out}
+@keyframes ind{0%{margin-left:-35%}100%{margin-left:100%}}
+.song{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}
+.song b{display:block;margin-bottom:8px}
+.song audio{width:100%}
+.song .acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.hide{display:none!important}
+.note{font-size:12.5px;color:var(--mut);margin-top:10px;line-height:1.5}
+.note a{color:var(--acc2)}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.hitem{display:block;width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;text-align:left;color:var(--txt);font:inherit;margin-top:7px}
+.hitem small{display:block;color:var(--mut);margin-top:2px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:end center;z-index:10}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));width:100%;max-width:720px;max-height:90vh;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><h1>Jingle <span>Studio</span></h1><button class="gear" id="openSet" aria-label="Ajustes">⚙</button></div>
+  <p class="sub">Escribí la idea y la IA te compone la canción: letra, música y voces cantadas, en el género que elijas.</p>
+
+  <section class="card">
+    <h2><span class="n">1</span>Tu idea</h2>
+    <textarea id="idea" placeholder="Ej: jingle para mi pizzería Don Tito en Quilmes, 2x1 los martes, que sea pegadizo y de barrio"></textarea>
+    <label class="l">Frase que no puede faltar <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional)</span></label>
+    <input type="text" id="hook" placeholder="Ej: Don Tito, la pizza del barrio">
+    <label class="l">Género</label>
+    <div class="chips" id="genres"></div>
+    <input type="text" id="genreOther" class="hide" placeholder="Escribí el género o la mezcla que quieras" style="margin-top:8px">
+    <label class="l">Voces</label>
+    <div class="chips" id="voices"></div>
+    <label class="l">Duración</label>
+    <div class="chips" id="durs"></div>
+    <label class="l">Idioma</label>
+    <div class="chips" id="langs"></div>
+    <button class="btn main" id="compose">✍️ Componer letra</button>
+    <div class="msg" id="msg1"></div>
+  </section>
+
+  <section class="card hide" id="step2">
+    <h2><span class="n">2</span>Letra y estilo</h2>
+    <label class="l" style="margin-top:0">Estilo musical</label>
+    <textarea id="caption"></textarea>
+    <label class="l">Letra</label>
+    <textarea id="lyrics"></textarea>
+    <div class="note">Podés cambiar lo que quieras antes de cantarla. Las etiquetas entre corchetes, como [Chorus], marcan las partes y no se cantan.</div>
+    <button class="btn main" id="sing">🎤 Cantar canción</button>
+    <div class="prog hide" id="prog"><i></i></div>
+    <div class="msg" id="msg2"></div>
+    <div id="results"></div>
+  </section>
+
+  <section class="card hide" id="histCard">
+    <h2><span class="n">♪</span>Mis canciones</h2>
+    <div id="hist"></div>
+    <div class="note">Los audios quedan guardados en el servidor por un tiempo limitado: descargá los que te gusten.</div>
+  </section>
+
+  <p class="note" style="text-align:center;margin-top:22px">Música generada con <a href="https://github.com/ace-step/ACE-Step-1.5" target="_blank" rel="noopener">ACE-Step 1.5</a> (código abierto, licencia MIT), a través de su demo gratuito en Hugging Face.</p>
+</div>
+
+<div class="modal hide" id="setModal">
+  <div class="sheet">
+    <h2 style="font-family:'Bricolage Grotesque';margin:0 0 6px">Ajustes</h2>
+    <label class="l">Token de Hugging Face <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional, gratis)</span></label>
+    <input type="password" id="token" placeholder="hf_…" autocomplete="off">
+    <div class="note">Sin token funciona, pero con un límite chico de canciones por día. Con una cuenta gratis de Hugging Face tenés más: entrá a <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>, creá un token de tipo "Read" y pegalo acá. Queda guardado solo en este dispositivo.</div>
+    <label class="l">Servidor (Space)</label>
+    <input type="text" id="space" placeholder="ACE-Step/Ace-Step-v1.5">
+    <div class="note">Dejalo así salvo que tengas tu propia copia del Space.</div>
+    <label class="l">Versiones por canción</label>
+    <div class="chips" id="batch"></div>
+    <button class="btn main" id="closeSet">Guardar</button>
+  </div>
+</div>
+
+<script src="gradio.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const GENRES=[["Cumbia","argentine cumbia, accordion, güira, bass"],["Cuarteto","cuarteto cordobés, piano, accordion, upbeat"],["Rock nacional","argentine rock, electric guitars, live drums"],["Pop","catchy latin pop, bright synths"],["Reggaetón","reggaeton, dembow beat, 808 bass"],["Trap","latin trap, 808, hi-hats"],["Folklore","argentine folk, chacarera, guitar, bombo"],["Tango","modern tango, bandoneon, piano, strings"],["Electrónica","dance pop, house beat, synths"],["Balada","romantic latin ballad, piano, strings"],["Jazz","smooth jazz, piano, upright bass"],["Infantil","children's song, playful, ukulele, glockenspiel"],["Otro",""]];
+const VOICES=[["Mujer","female vocals","a female singer"],["Hombre","male vocals","a male singer"],["Dúo","male and female duet","a male and female duet, alternating verses"],["Con coro","lead vocals with group chorus","a lead singer with a group chorus"]];
+const DURS=[[30,"Jingle 30 s"],[60,"1 minuto"],[120,"2 minutos"],[180,"3 minutos"]];
+const LANGS=[["ar","Español Argentina"],["neutro","Español neutro"],["en","Inglés"]];
+let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:2,draft:null,hist:[]};
+try{const s=JSON.parse(localStorage.getItem("jingle-studio")||"null");if(s)S=Object.assign(S,s);}catch(e){}
+const save=()=>{try{localStorage.setItem("jingle-studio",JSON.stringify(S))}catch(e){}};
+
+function chips(el,items,isOn,on){el.innerHTML="";items.forEach(([v,l])=>{const b=document.createElement("button");b.className="chip"+(isOn(v)?" on":"");b.textContent=l;b.onclick=()=>on(v);el.appendChild(b);});}
+function render(){
+  chips($("genres"),GENRES.map(g=>[g[0],g[0]]),v=>v===S.genre,v=>{S.genre=v;save();render();});
+  $("genreOther").classList.toggle("hide",S.genre!=="Otro");
+  chips($("voices"),VOICES.map(v=>[v[0],v[0]]),v=>v===S.voices,v=>{S.voices=v;save();render();});
+  chips($("durs"),DURS,v=>v===S.dur,v=>{S.dur=v;save();render();});
+  chips($("langs"),LANGS,v=>v===S.lang,v=>{S.lang=v;save();render();});
+  chips($("batch"),[[1,"1 (más rápido)"],[2,"2 para elegir"]],v=>v===S.batch,v=>{S.batch=v;save();render();});
+}
+$("idea").value=S.idea;$("hook").value=S.hook;$("genreOther").value=S.genreOther;
+$("idea").oninput=e=>{S.idea=e.target.value;save();};
+$("hook").oninput=e=>{S.hook=e.target.value;save();};
+$("genreOther").oninput=e=>{S.genreOther=e.target.value;save();};
+$("caption").oninput=e=>{if(S.draft){S.draft.caption=e.target.value;save();}};
+$("lyrics").oninput=e=>{if(S.draft){S.draft.lyrics=e.target.value;save();}};
+
+/* settings */
+$("openSet").onclick=()=>{$("token").value=S.token;$("space").value=S.space;$("setModal").classList.remove("hide");};
+$("closeSet").onclick=()=>{S.token=$("token").value.trim();S.space=$("space").value.trim()||"ACE-Step/Ace-Step-v1.5";save();client=null;$("setModal").classList.add("hide");};
+$("setModal").onclick=e=>{if(e.target.id==="setModal")$("closeSet").onclick();};
+
+/* gradio */
+let client=null;
+async function getClient(onMsg){
+  if(client)return client;
+  if(!window.GradioClient)throw new Error("No se cargó el conector. Recargá la página.");
+  onMsg&&onMsg("Conectando con el servidor de música… (si estaba dormido puede tardar un minuto)");
+  const opts={};if(S.token)opts.token=S.token, opts.hf_token=S.token;
+  client=await GradioClient.Client.connect(S.space,opts);
+  return client;
+}
+function niceErr(e){
+  const t=String((e&&(e.message||e.title||e.original_msg))||e||"");
+  if(/quota|ZeroGPU|exceeded|GPU limit/i.test(t))return "Se terminó el cupo gratis de hoy del servidor. Probá más tarde, o cargá tu token gratis de Hugging Face en ⚙ Ajustes para tener más cupo.";
+  if(/sleep|paused|building|not running|Space metadata|could not resolve|Failed to fetch|NetworkError|fetch/i.test(t))return "No pude conectar con el servidor de música. Puede estar dormido o saturado: esperá un minuto y probá de nuevo.";
+  if(/token|401|403|unauthorized/i.test(t))return "El token de Hugging Face no es válido. Revisalo en ⚙ Ajustes (o borralo para usar el modo sin token).";
+  return "Hubo un problema con el servidor ("+t.slice(0,140)+"). Probá de nuevo en un rato.";
+}
+async function run(endpoint,data,onStatus){
+  const c=await getClient(onStatus);
+  const job=c.submit(endpoint,data);
+  let result=null;
+  for await(const ev of job){
+    if(ev.type==="status"){
+      if(ev.stage==="error")throw new Error(ev.message||"error");
+      if(onStatus){
+        if(ev.queue&&ev.position!=null&&ev.position>0)onStatus(`En la fila del servidor: puesto ${ev.position+1}${ev.eta?` (≈ ${Math.round(ev.eta)} s)`:""}`,ev);
+        else if(ev.stage==="pending")onStatus("Esperando lugar en el servidor…",ev);
+        else if(ev.stage==="generating"||ev.stage==="processing")onStatus(null,ev);
+      }
+    }else if(ev.type==="data"){result=ev.data;}
+  }
+  if(!result)throw new Error("El servidor no devolvió nada");
+  return result;
+}
+
+/* step 1: compose lyrics with ACE-Step's own LM */
+function describe(){
+  const g=GENRES.find(x=>x[0]===S.genre);const genre=S.genre==="Otro"?(S.genreOther||"catchy pop"):`${S.genre} (${g[1]})`;
+  const v=VOICES.find(x=>x[0]===S.voices);
+  const lang={ar:"Spanish, Argentine rioplatense style (voseo)",neutro:"neutral Latin American Spanish",en:"English"}[S.lang];
+  const kind=S.dur<=30?"a short catchy advertising jingle (about 30 seconds) with a memorable hook":`a catchy song of about ${Math.round(S.dur/60)} minute${S.dur>60?"s":""}`;
+  return `Write ${kind}, genre ${genre}, sung by ${v[2]}, lyrics in ${lang}. Topic / brief: ${S.idea.trim()}.`+
+    (S.hook.trim()?` The chorus must include this exact phrase: "${S.hook.trim()}".`:"")+` Upbeat, catchy, radio-ready.`;
+}
+const vlang=()=>S.lang==="en"?"en":"es";
+$("compose").onclick=async()=>{
+  const m=$("msg1");m.className="msg";
+  if(!S.idea.trim()){m.className="msg err";m.textContent="Escribí primero la idea de la canción.";$("idea").focus();return;}
+  const b=$("compose");b.disabled=true;b.textContent="Componiendo…";m.textContent="Arrancando…";
+  try{
+    const r=await run("/handle_create_sample_wrapper",{query:describe(),instrumental:false,vocal_lang:vlang(),temp:.85,top_k:0,top_p:.9,debug:false},t=>{if(t)m.textContent=t;else m.textContent="La IA está escribiendo la letra…";});
+    const [caption,lyrics,bpm,dur,key,lang1,lang2,ts]=r;
+    if(!lyrics||!String(lyrics).trim())throw new Error("No llegó la letra");
+    const g=GENRES.find(x=>x[0]===S.genre);const v=VOICES.find(x=>x[0]===S.voices);
+    let cap=String(caption||"");if(g&&g[1]&&!cap.toLowerCase().includes(S.genre.toLowerCase().split(" ")[0]))cap=`${g[1]}, ${v[1]}, `+cap;
+    S.draft={caption:cap,lyrics:String(lyrics).trim(),bpm:+bpm||0,key:key||"",ts:ts||"",lang:(lang1&&lang1!=="unknown")?lang1:vlang(),idea:S.idea};
+    save();showDraft();m.className="msg ok";m.textContent="¡Letra lista! Revisala y tocá Cantar.";
+    $("step2").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(e){m.className="msg err";m.textContent=niceErr(e);client=null;}
+  finally{b.disabled=false;b.textContent="✍️ Componer letra";}
+};
+function showDraft(){if(!S.draft)return;$("step2").classList.remove("hide");$("caption").value=S.draft.caption;$("lyrics").value=S.draft.lyrics;}
+
+/* step 2: sing */
+function genData(d){
+  return {
+    selected_model:"acestep-v15-xl-turbo",generation_mode:"custom",simple_query_input:"",simple_vocal_language:d.lang||"unknown",
+    param_4:d.caption,param_5:d.lyrics,param_6:d.bpm||0,param_7:d.key||"",param_8:d.ts||"",param_9:d.lang||"unknown",
+    param_10:8,param_11:7.0,param_12:true,param_13:"-1",param_14:null,param_15:S.dur,param_16:S.batch,
+    param_17:null,param_18:"",param_19:0,param_20:-1,param_21:"Fill the audio semantic mask based on the given conditions:",param_22:1.0,param_23:"text2music",
+    param_24:false,param_25:0,param_26:1,param_27:3,param_28:"ode",param_29:"",param_30:"mp3",
+    param_31:.85,param_32:true,param_33:2,param_34:0,param_35:.9,param_36:"NO USER INPUT",param_37:true,param_38:true,param_39:true,
+    param_41:false,param_42:true,param_43:false,param_44:false,param_45:.5,param_46:8,param_47:null,param_48:[],param_49:false
+  };
+}
+function findAudios(data){
+  const out=[];const seen=new Set();
+  const walk=x=>{if(!x)return;if(Array.isArray(x)){x.forEach(walk);return;}
+    if(typeof x==="object"){const u=x.url||(x.value&&x.value.url);const p=x.path||x.orig_name||"";
+      if(u&&/\.(mp3|wav|flac|ogg|m4a)(\?|$)/i.test(u+" "+p)&&!seen.has(u)){seen.add(u);out.push(u);}
+      else if(x.value)walk(x.value);}};
+  walk(data);return out;
+}
+let timer=null;
+$("sing").onclick=async()=>{
+  const d=S.draft;if(!d)return;d.caption=$("caption").value;d.lyrics=$("lyrics").value;
+  const m=$("msg2");m.className="msg";const b=$("sing");b.disabled=true;b.textContent="Cantando…";
+  const pr=$("prog");pr.classList.remove("hide");pr.classList.add("ind");
+  const t0=Date.now();let base="Preparando…";
+  timer=setInterval(()=>{m.textContent=`${base} · ${Math.round((Date.now()-t0)/1000)} s`;},500);
+  try{
+    const r=await run("/generation_wrapper",genData(d),(t)=>{base=t||"Generando la música y las voces…";});
+    const urls=findAudios(r);
+    if(!urls.length)throw new Error("El servidor no devolvió audio");
+    const song={title:(d.idea||"Canción").slice(0,60),genre:S.genre==="Otro"?S.genreOther:S.genre,at:Date.now(),urls,caption:d.caption,lyrics:d.lyrics};
+    S.hist=[song,...(S.hist||[])].slice(0,15);save();
+    showResults(song);m.className="msg ok";base="";m.textContent=`¡Lista en ${Math.round((Date.now()-t0)/1000)} s! Escuchala abajo.`;
+    renderHist();
+  }catch(e){m.className="msg err";m.textContent=niceErr(e);client=null;}
+  finally{clearInterval(timer);if(m.className!=="msg err"&&m.className!=="msg ok")m.textContent="";pr.classList.add("hide");pr.classList.remove("ind");b.disabled=false;b.textContent="🎤 Cantar canción";}
+};
+function showResults(song){
+  const box=$("results");box.innerHTML="";
+  song.urls.forEach((u,i)=>{
+    const d=document.createElement("div");d.className="song";
+    d.innerHTML=`<b>Versión ${i+1}</b><audio controls preload="metadata"></audio><div class="acts"><button class="btn sm">⬇ Descargar MP3</button><button class="btn sm">🔗 Compartir</button></div>`;
+    d.querySelector("audio").src=u;
+    const [dl,sh]=d.querySelectorAll("button");
+    dl.onclick=()=>download(u,`${song.title.replace(/[^\w áéíóúñ-]/gi,"").trim()||"jingle"} v${i+1}.mp3`,dl);
+    sh.onclick=async()=>{try{const blob=await (await fetch(u)).blob();const f=new File([blob],"jingle.mp3",{type:"audio/mpeg"});
+      if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:song.title});else if(navigator.share)await navigator.share({url:u,title:song.title});else{await navigator.clipboard.writeText(u);sh.textContent="Link copiado";}}catch(e){}};
+    box.appendChild(d);
+  });
+}
+async function download(u,name,btn){
+  const t=btn.textContent;btn.textContent="Descargando…";
+  try{const blob=await (await fetch(u)).blob();const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);btn.textContent="✓ Descargado";}
+  catch(e){window.open(u,"_blank");btn.textContent=t;}
+}
+function renderHist(){
+  const h=S.hist||[];$("histCard").classList.toggle("hide",!h.length);const box=$("hist");box.innerHTML="";
+  h.forEach(s=>{const b=document.createElement("button");b.className="hitem";b.innerHTML="<b></b><small></small>";
+    b.querySelector("b").textContent=s.title;b.querySelector("small").textContent=`${s.genre} · ${new Date(s.at).toLocaleString("es-AR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`;
+    b.onclick=()=>{S.draft=Object.assign({},S.draft||{},{caption:s.caption,lyrics:s.lyrics});showDraft();showResults(s);$("step2").scrollIntoView({behavior:"smooth"});};box.appendChild(b);});
+}
+render();showDraft();renderHist();
+</script>
+</body>
+</html>

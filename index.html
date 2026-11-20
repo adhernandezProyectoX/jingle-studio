@@ -80,6 +80,11 @@ label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-t
     <div class="chips" id="langs"></div>
     <button class="btn main" id="compose">✍️ Componer letra</button>
     <div class="msg" id="msg1"></div>
+    <div id="directBox" class="hide">
+      <button class="btn" id="direct" style="width:100%;margin-top:10px">⚡ Crear canción directo</button>
+      <button class="btn" id="own" style="width:100%;margin-top:8px">📝 Escribir mi propia letra</button>
+    </div>
+    <details id="log1" class="hide note"><summary>Detalles técnicos</summary><pre style="white-space:pre-wrap;font-size:11.5px"></pre></details>
   </section>
 
   <section class="card hide" id="step2">
@@ -93,6 +98,7 @@ label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-t
     <div class="prog hide" id="prog"><i></i></div>
     <div class="msg" id="msg2"></div>
     <div id="results"></div>
+    <details id="log2" class="hide note"><summary>Detalles técnicos</summary><pre style="white-space:pre-wrap;font-size:11.5px"></pre></details>
   </section>
 
   <section class="card hide" id="histCard">
@@ -168,21 +174,28 @@ function niceErr(e){
   if(/token|401|403|unauthorized/i.test(t))return "El token de Hugging Face no es válido. Revisalo en ⚙ Ajustes (o borralo para usar el modo sin token).";
   return "Hubo un problema con el servidor ("+t.slice(0,140)+"). Probá de nuevo en un rato.";
 }
+let lastLog=[];
+function logEv(x){lastLog.push(x);if(lastLog.length>40)lastLog.shift();}
 async function run(endpoint,data,onStatus){
+  lastLog=[];
   const c=await getClient(onStatus);
+  logEv("endpoint "+endpoint);
   const job=c.submit(endpoint,data);
-  let result=null;
+  let result=null,lastMsg="";
   for await(const ev of job){
+    if(ev.type==="log"){logEv(`log[${ev.level}] ${ev.log}`);if(ev.level==="warning"||ev.level==="error")lastMsg=ev.log||lastMsg;if(/quota|ZeroGPU/i.test(ev.log||""))throw new Error(ev.log);continue;}
     if(ev.type==="status"){
-      if(ev.stage==="error")throw new Error(ev.message||"error");
+      logEv(`status ${ev.stage}${ev.message?": "+ev.message:""}${ev.success===false?" (success=false)":""}`);
+      if(ev.message)lastMsg=ev.message;
+      if(ev.stage==="error")throw new Error(ev.message||lastMsg||"error");
       if(onStatus){
         if(ev.queue&&ev.position!=null&&ev.position>0)onStatus(`En la fila del servidor: puesto ${ev.position+1}${ev.eta?` (≈ ${Math.round(ev.eta)} s)`:""}`,ev);
         else if(ev.stage==="pending")onStatus("Esperando lugar en el servidor…",ev);
         else if(ev.stage==="generating"||ev.stage==="processing")onStatus(null,ev);
       }
-    }else if(ev.type==="data"){result=ev.data;}
+    }else if(ev.type==="data"){logEv("data "+(Array.isArray(ev.data)?ev.data.length+" items":typeof ev.data));if(ev.data&&(!Array.isArray(ev.data)||ev.data.some(x=>x!=null)))result=ev.data;}
   }
-  if(!result)throw new Error("El servidor no devolvió nada");
+  if(!result)throw new Error("El servidor terminó sin respuesta"+(lastMsg?": "+lastMsg:""));
   return result;
 }
 
@@ -202,14 +215,15 @@ $("compose").onclick=async()=>{
   const b=$("compose");b.disabled=true;b.textContent="Componiendo…";m.textContent="Arrancando…";
   try{
     const r=await run("/handle_create_sample_wrapper",{query:describe(),instrumental:false,vocal_lang:vlang(),temp:.85,top_k:0,top_p:.9,debug:false},t=>{if(t)m.textContent=t;else m.textContent="La IA está escribiendo la letra…";});
-    const [caption,lyrics,bpm,dur,key,lang1,lang2,ts]=r;
+    const val=x=>x&&typeof x==="object"&&"value" in x?x.value:x;
+    const [caption,lyrics,bpm,dur,key,lang1,lang2,ts]=r.map(val);
     if(!lyrics||!String(lyrics).trim())throw new Error("No llegó la letra");
     const g=GENRES.find(x=>x[0]===S.genre);const v=VOICES.find(x=>x[0]===S.voices);
     let cap=String(caption||"");if(g&&g[1]&&!cap.toLowerCase().includes(S.genre.toLowerCase().split(" ")[0]))cap=`${g[1]}, ${v[1]}, `+cap;
     S.draft={caption:cap,lyrics:String(lyrics).trim(),bpm:+bpm||0,key:key||"",ts:ts||"",lang:(lang1&&lang1!=="unknown")?lang1:vlang(),idea:S.idea};
     save();showDraft();m.className="msg ok";m.textContent="¡Letra lista! Revisala y tocá Cantar.";
     $("step2").scrollIntoView({behavior:"smooth",block:"start"});
-  }catch(e){m.className="msg err";m.textContent=niceErr(e);client=null;}
+  }catch(e){m.className="msg err";m.textContent=niceErr(e)+" Podés probar el modo directo de abajo, donde la IA escribe y canta en un solo paso.";client=null;$("directBox").classList.remove("hide");showLog("log1");}
   finally{b.disabled=false;b.textContent="✍️ Componer letra";}
 };
 function showDraft(){if(!S.draft)return;$("step2").classList.remove("hide");$("caption").value=S.draft.caption;$("lyrics").value=S.draft.lyrics;}
@@ -235,21 +249,31 @@ function findAudios(data){
   walk(data);return out;
 }
 let timer=null;
+function showLog(id){const el=$(id);el.classList.remove("hide");el.querySelector("pre").textContent=lastLog.join("\n")||"(sin datos)";}
+$("own").onclick=()=>{const g=GENRES.find(x=>x[0]===S.genre);const v=VOICES.find(x=>x[0]===S.voices);
+  S.draft={caption:`${S.genre==="Otro"?S.genreOther:g[1]}, ${v[1]}, catchy, upbeat`,lyrics:"[Verse]\n\n[Chorus]\n"+(S.hook||"")+"\n",bpm:0,key:"",ts:"",lang:vlang(),idea:S.idea};save();showDraft();$("step2").scrollIntoView({behavior:"smooth"});$("lyrics").focus();};
+$("direct").onclick=()=>{if(!S.idea.trim()){$("msg1").textContent="Escribí primero la idea.";return;}
+  S.draft={caption:"",lyrics:"",bpm:0,key:"",ts:"",lang:vlang(),idea:S.idea,simple:true};save();$("step2").classList.remove("hide");
+  $("caption").value="(la IA lo elige)";$("lyrics").value="(la IA escribe la letra al cantar)";$("step2").scrollIntoView({behavior:"smooth"});$("sing").click();};
 $("sing").onclick=async()=>{
-  const d=S.draft;if(!d)return;d.caption=$("caption").value;d.lyrics=$("lyrics").value;
+  const d=S.draft;if(!d)return;
+  if(d.simple&&($("lyrics").value.startsWith("(la IA")))d.simple=true;else{d.simple=false;d.caption=$("caption").value;d.lyrics=$("lyrics").value;}
   const m=$("msg2");m.className="msg";const b=$("sing");b.disabled=true;b.textContent="Cantando…";
   const pr=$("prog");pr.classList.remove("hide");pr.classList.add("ind");
   const t0=Date.now();let base="Preparando…";
   timer=setInterval(()=>{m.textContent=`${base} · ${Math.round((Date.now()-t0)/1000)} s`;},500);
   try{
-    const r=await run("/generation_wrapper",genData(d),(t)=>{base=t||"Generando la música y las voces…";});
+    const gd=genData(d);if(d.simple){gd.generation_mode="simple";gd.simple_query_input=describe();gd.simple_vocal_language=vlang();gd.param_4="";gd.param_5="";}
+    const r=await run("/generation_wrapper",gd,(t)=>{base=t||"Generando la música y las voces…";});
     const urls=findAudios(r);
+    if(d.simple){const strs=[];const w=x=>{if(typeof x==="string")strs.push(x);else if(Array.isArray(x))x.forEach(w);else if(x&&typeof x==="object"&&"value" in x)w(x.value);};w(r);
+      const ly=strs.find(t=>/\[(verse|chorus|intro)/i.test(t));if(ly){d.lyrics=ly;$("lyrics").value=ly;}}
     if(!urls.length)throw new Error("El servidor no devolvió audio");
     const song={title:(d.idea||"Canción").slice(0,60),genre:S.genre==="Otro"?S.genreOther:S.genre,at:Date.now(),urls,caption:d.caption,lyrics:d.lyrics};
     S.hist=[song,...(S.hist||[])].slice(0,15);save();
     showResults(song);m.className="msg ok";base="";m.textContent=`¡Lista en ${Math.round((Date.now()-t0)/1000)} s! Escuchala abajo.`;
     renderHist();
-  }catch(e){m.className="msg err";m.textContent=niceErr(e);client=null;}
+  }catch(e){m.className="msg err";m.textContent=niceErr(e);client=null;showLog("log2");}
   finally{clearInterval(timer);if(m.className!=="msg err"&&m.className!=="msg ok")m.textContent="";pr.classList.add("hide");pr.classList.remove("ind");b.disabled=false;b.textContent="🎤 Cantar canción";}
 };
 function showResults(song){

@@ -125,7 +125,6 @@ label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-t
   </div>
 </div>
 
-<script src="gradio.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const GENRES=[["Cumbia","argentine cumbia, accordion, güira, bass"],["Cuarteto","cuarteto cordobés, piano, accordion, upbeat"],["Rock nacional","argentine rock, electric guitars, live drums"],["Pop","catchy latin pop, bright synths"],["Reggaetón","reggaeton, dembow beat, 808 bass"],["Trap","latin trap, 808, hi-hats"],["Folklore","argentine folk, chacarera, guitar, bombo"],["Tango","modern tango, bandoneon, piano, strings"],["Electrónica","dance pop, house beat, synths"],["Balada","romantic latin ballad, piano, strings"],["Jazz","smooth jazz, piano, upright bass"],["Infantil","children's song, playful, ukulele, glockenspiel"],["Otro",""]];
@@ -176,27 +175,51 @@ function niceErr(e){
 }
 let lastLog=[];
 function logEv(x){lastLog.push(x);if(lastLog.length>40)lastLog.shift();}
+const ORDER={
+  "/handle_create_sample_wrapper":["query","instrumental","vocal_lang","temp","top_k","top_p","debug"],
+  "/generation_wrapper":["selected_model","generation_mode","simple_query_input","simple_vocal_language",...Array.from({length:36},(_,i)=>"param_"+(i+4)),"param_41","param_42","param_43","param_44","param_45","param_46","param_47","param_48","param_49"]
+};
+function baseURL(){
+  const sp=(S.space||"ACE-Step/Ace-Step-v1.5").trim();
+  if(/^https?:\/\//.test(sp))return sp.replace(/\/+$/,"");
+  return "https://"+sp.toLowerCase().replace(/[\/._]/g,"-")+".hf.space";
+}
 async function run(endpoint,data,onStatus){
   lastLog=[];
-  const c=await getClient(onStatus);
-  logEv("endpoint "+endpoint);
-  const job=c.submit(endpoint,data);
-  let result=null,lastMsg="";
-  for await(const ev of job){
-    if(ev.type==="log"){logEv(`log[${ev.level}] ${ev.log}`);if(ev.level==="warning"||ev.level==="error")lastMsg=ev.log||lastMsg;if(/quota|ZeroGPU/i.test(ev.log||""))throw new Error(ev.log);continue;}
-    if(ev.type==="status"){
-      logEv(`status ${ev.stage}${ev.message?": "+ev.message:""}${ev.success===false?" (success=false)":""}`);
-      if(ev.message)lastMsg=ev.message;
-      if(ev.stage==="error")throw new Error(ev.message||lastMsg||"error");
-      if(onStatus){
-        if(ev.queue&&ev.position!=null&&ev.position>0)onStatus(`En la fila del servidor: puesto ${ev.position+1}${ev.eta?` (≈ ${Math.round(ev.eta)} s)`:""}`,ev);
-        else if(ev.stage==="pending")onStatus("Esperando lugar en el servidor…",ev);
-        else if(ev.stage==="generating"||ev.stage==="processing")onStatus(null,ev);
-      }
-    }else if(ev.type==="data"){logEv("data "+(Array.isArray(ev.data)?ev.data.length+" items":typeof ev.data));if(ev.data&&(!Array.isArray(ev.data)||ev.data.some(x=>x!=null)))result=ev.data;}
-  }
-  if(!result)throw new Error("El servidor terminó sin respuesta"+(lastMsg?": "+lastMsg:""));
-  return result;
+  const base=baseURL(),name=endpoint.replace(/^\//,"");
+  const arr=ORDER[endpoint].map(k=>data[k]===undefined?null:data[k]);
+  const headers={"Content-Type":"application/json"};if(S.token)headers.Authorization="Bearer "+S.token;
+  onStatus&&onStatus("Conectando con el servidor de música… (si estaba dormido puede tardar un minuto)");
+  logEv("POST "+base+"/gradio_api/call/"+name+" ("+arr.length+" datos)");
+  let r;
+  try{r=await fetch(`${base}/gradio_api/call/${name}`,{method:"POST",headers,body:JSON.stringify({data:arr})});}
+  catch(e){logEv("fetch error: "+e.message);throw new Error("Failed to fetch");}
+  const txt=await r.text();logEv("HTTP "+r.status+": "+txt.slice(0,300));
+  if(!r.ok)throw new Error(`HTTP ${r.status} ${txt.slice(0,200)}`);
+  let id;try{id=JSON.parse(txt).event_id;}catch(e){}
+  if(!id)throw new Error("Sin event_id: "+txt.slice(0,200));
+  onStatus&&onStatus("Esperando lugar en el servidor…");
+  const h2={};if(S.token)h2.Authorization="Bearer "+S.token;
+  const res=await fetch(`${base}/gradio_api/call/${name}/${id}`,{headers:h2});
+  if(!res.ok){const t=await res.text();logEv("GET HTTP "+res.status+": "+t.slice(0,300));throw new Error(`HTTP ${res.status} ${t.slice(0,200)}`);}
+  const reader=res.body.getReader();const dec=new TextDecoder();let buf="",ev="",result=null,errMsg=null,last=null;
+  const handle=(event,dataStr)=>{
+    if(event!=="heartbeat")logEv(`event ${event}: ${String(dataStr).slice(0,400)}`);
+    let d=null;try{d=JSON.parse(dataStr);}catch(e){d=dataStr;}
+    if(event==="complete"){result=d;}
+    else if(event==="generating"){last=d;onStatus&&onStatus(null);}
+    else if(event==="error"){errMsg=(d&&typeof d==="object"?(d.message||d.error||JSON.stringify(d)):d)||"error del servidor (sin detalle)";}
+    else if(event==="log"&&d&&d.log){if(/quota|ZeroGPU/i.test(d.log))errMsg=d.log;}
+  };
+  for(;;){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf("\n"))>=0){const line=buf.slice(0,i).replace(/\r$/,"");buf=buf.slice(i+1);
+      if(line.startsWith("event:"))ev=line.slice(6).trim();else if(line.startsWith("data:"))handle(ev,line.slice(5).trim());}}
+  if(errMsg)throw new Error(errMsg);
+  const out=result||last;
+  if(!out||(Array.isArray(out)&&!out.some(x=>x!=null)))throw new Error("El servidor terminó sin respuesta");
+  // archivos con ruta relativa → URL completa
+  const fix=x=>{if(Array.isArray(x))return x.map(fix);if(x&&typeof x==="object"){if(x.path&&!x.url)x.url=`${base}/gradio_api/file=${x.path}`;for(const k in x)if(x[k]&&typeof x[k]==="object")x[k]=fix(x[k]);}return x;};
+  return fix(out);
 }
 
 /* step 1: compose lyrics with ACE-Step's own LM */

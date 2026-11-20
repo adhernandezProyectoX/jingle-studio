@@ -107,12 +107,17 @@ label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-t
     <div class="note">Los audios quedan guardados en el servidor por un tiempo limitado: descargá los que te gusten.</div>
   </section>
 
-  <p class="note" style="text-align:center;margin-top:22px">Música generada con <a href="https://github.com/ace-step/ACE-Step-1.5" target="_blank" rel="noopener">ACE-Step 1.5</a> (código abierto, licencia MIT), a través de su demo gratuito en Hugging Face.</p>
+  <p class="note" style="text-align:center;margin-top:22px">Música generada con <a href="https://github.com/ace-step/ACE-Step-1.5" target="_blank" rel="noopener">ACE-Step 1.5</a> (código abierto, licencia MIT), vía WaveSpeed o Hugging Face.</p>
 </div>
 
 <div class="modal hide" id="setModal">
   <div class="sheet">
     <h2 style="font-family:'Bricolage Grotesque';margin:0 0 6px">Ajustes</h2>
+    <label class="l">Motor para cantar</label>
+    <div class="chips" id="prov"></div>
+    <label class="l">Clave de WaveSpeed</label>
+    <input type="password" id="wskey" placeholder="Pegá tu API key de WaveSpeed" autocomplete="off">
+    <div class="note">Gratis para empezar: entrá a <a href="https://wavespeed.ai" target="_blank" rel="noopener">wavespeed.ai</a> con tu cuenta de Google, te regalan $1 sin tarjeta. Andá a <a href="https://wavespeed.ai/accesskey" target="_blank" rel="noopener">wavespeed.ai/accesskey</a>, creá una key y pegala acá. Un jingle de 30 s cuesta menos de 1 centavo. Queda guardada solo en este dispositivo.</div>
     <label class="l">Token de Hugging Face <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional, gratis)</span></label>
     <input type="password" id="token" placeholder="hf_…" autocomplete="off">
     <div class="note">Sin token funciona, pero con un límite chico de canciones por día. Con una cuenta gratis de Hugging Face tenés más: entrá a <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>, creá un token de tipo "Read" y pegalo acá. Queda guardado solo en este dispositivo.</div>
@@ -131,7 +136,7 @@ const GENRES=[["Cumbia","argentine cumbia, accordion, güira, bass"],["Cuarteto"
 const VOICES=[["Mujer","female vocals","a female singer"],["Hombre","male vocals","a male singer"],["Dúo","male and female duet","a male and female duet, alternating verses"],["Con coro","lead vocals with group chorus","a lead singer with a group chorus"]];
 const DURS=[[30,"Jingle 30 s"],[60,"1 minuto"],[120,"2 minutos"],[180,"3 minutos"]];
 const LANGS=[["ar","Español Argentina"],["neutro","Español neutro"],["en","Inglés"]];
-let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:1,v:3,draft:null,hist:[]};
+let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:1,v:3,prov:"ws",wskey:"",draft:null,hist:[]};
 try{const s=JSON.parse(localStorage.getItem("jingle-studio")||"null");if(s){S=Object.assign(S,s);if(s.v!==3){S.batch=1;S.v=3;}}}catch(e){}
 const save=()=>{try{localStorage.setItem("jingle-studio",JSON.stringify(S))}catch(e){}};
 
@@ -142,6 +147,7 @@ function render(){
   chips($("voices"),VOICES.map(v=>[v[0],v[0]]),v=>v===S.voices,v=>{S.voices=v;save();render();});
   chips($("durs"),DURS,v=>v===S.dur,v=>{S.dur=v;save();render();});
   chips($("langs"),LANGS,v=>v===S.lang,v=>{S.lang=v;save();render();});
+  chips($("prov"),[["ws","WaveSpeed (recomendado)"],["hf","Hugging Face gratis"]],v=>v===S.prov,v=>{S.prov=v;save();render();});
   chips($("batch"),[[1,"1 (más rápido)"],[2,"2 para elegir"]],v=>v===S.batch,v=>{S.batch=v;save();render();});
 }
 $("idea").value=S.idea;$("hook").value=S.hook;$("genreOther").value=S.genreOther;
@@ -152,8 +158,8 @@ $("caption").oninput=e=>{if(S.draft){S.draft.caption=e.target.value;save();}};
 $("lyrics").oninput=e=>{if(S.draft){S.draft.lyrics=e.target.value;save();}};
 
 /* settings */
-$("openSet").onclick=()=>{$("token").value=S.token;$("space").value=S.space;$("setModal").classList.remove("hide");};
-$("closeSet").onclick=()=>{S.token=$("token").value.trim();S.space=$("space").value.trim()||"ACE-Step/Ace-Step-v1.5";save();client=null;$("setModal").classList.add("hide");};
+$("openSet").onclick=()=>{$("wskey").value=S.wskey||"";$("token").value=S.token;$("space").value=S.space;$("setModal").classList.remove("hide");};
+$("closeSet").onclick=()=>{S.wskey=$("wskey").value.trim();S.token=$("token").value.trim();S.space=$("space").value.trim()||"ACE-Step/Ace-Step-v1.5";save();client=null;$("setModal").classList.add("hide");};
 $("setModal").onclick=e=>{if(e.target.id==="setModal")$("closeSet").onclick();};
 
 /* gradio */
@@ -168,6 +174,12 @@ async function getClient(onMsg){
 }
 function niceErr(e){
   const t=String((e&&(e.message||e.title||e.original_msg))||e||"");
+  if(t==="NEED_LYRICS")return "Con WaveSpeed primero hay que tener la letra: tocá Componer letra arriba (o escribila vos).";
+  if(t==="NO_WSKEY")return "Falta la clave de WaveSpeed: pegala en ⚙ Ajustes (es gratis para empezar).";
+  if(t==="WS_FETCH")return "No pude conectar con WaveSpeed. Revisá tu conexión y probá de nuevo.";
+  if(/^WS_HTTP 401|^WS_HTTP 403/.test(t))return "WaveSpeed rechazó la clave. Revisala en ⚙ Ajustes.";
+  if(/^WS_HTTP 402|insufficient|balance/i.test(t))return "Se terminó el saldo de WaveSpeed. Podés cargar crédito en wavespeed.ai.";
+  if(/^WS/.test(t))return "WaveSpeed devolvió un error ("+t.slice(0,160)+").";
   if(t==="SIN_DETALLE")return S.token?"El servidor rechazó el pedido sin dar el motivo. Puede estar saturado: probá en unos minutos, o con una duración más corta.":"El servidor gratis rechazó el pedido sin decir el motivo. Casi siempre es porque sin cuenta el cupo de GPU es mínimo. Solución gratis: cargá un token de Hugging Face en ⚙ Ajustes (te explico ahí cómo sacarlo).";
   if(/quota|ZeroGPU|exceeded|GPU limit/i.test(t))return "Se terminó el cupo gratis de hoy del servidor. Probá más tarde, o cargá tu token gratis de Hugging Face en ⚙ Ajustes para tener más cupo.";
   if(/sleep|paused|building|not running|Space metadata|could not resolve|Failed to fetch|NetworkError|fetch/i.test(t))return "No pude conectar con el servidor de música. Puede estar dormido o saturado: esperá un minuto y probá de nuevo.";
@@ -223,6 +235,57 @@ async function run(endpoint,data,onStatus){
   return fix(out);
 }
 
+async function runWS(d,onStatus){
+  if(!S.wskey){openSettingsMsg();throw new Error("NO_WSKEY");}
+  const H={"Authorization":"Bearer "+S.wskey,"Content-Type":"application/json"};
+  lastLog=[];const body={tags:d.caption,lyrics:d.lyrics,duration:Math.min(240,Math.max(5,S.dur)),seed:-1};
+  logEv("POST wavespeed ace-step-1.5 "+JSON.stringify({tags:body.tags.slice(0,80),duration:body.duration}));
+  let r;try{r=await fetch("https://api.wavespeed.ai/api/v3/wavespeed-ai/ace-step-1.5",{method:"POST",headers:H,body:JSON.stringify(body)});}
+  catch(e){logEv("fetch error: "+e.message);throw new Error("WS_FETCH");}
+  const t=await r.text();logEv("HTTP "+r.status+": "+t.slice(0,300));
+  let j={};try{j=JSON.parse(t);}catch(e){}
+  if(!r.ok)throw new Error("WS_HTTP "+r.status+" "+((j&&(j.message||j.error))||t.slice(0,150)));
+  const id=(j.data&&j.data.id)||j.id;if(!id)throw new Error("WS sin id: "+t.slice(0,150));
+  const t0=Date.now();let wait=1500;
+  for(;;){
+    await new Promise(z=>setTimeout(z,wait));wait=Math.min(5000,wait+500);
+    const p=await fetch(`https://api.wavespeed.ai/api/v3/predictions/${id}/result`,{headers:{"Authorization":"Bearer "+S.wskey}});
+    const pt=await p.text();let pj={};try{pj=JSON.parse(pt);}catch(e){}
+    const dd=pj.data||pj;const st=dd.status;
+    if(st!=="processing"&&st!=="created")logEv("status "+st+": "+pt.slice(0,300));
+    onStatus&&onStatus(st==="created"?"En la fila…":"Generando la música y las voces…");
+    if(st==="completed"){const outs=(dd.outputs||[]).map(o=>typeof o==="string"?o:(o&&o.url)).filter(Boolean);if(!outs.length)throw new Error("WS sin audio");return outs;}
+    if(["failed","cancelled","timeout","deleted"].includes(st))throw new Error("WS "+st+": "+(dd.error||""));
+    if(Date.now()-t0>300000)throw new Error("WS tardó demasiado");
+  }
+}
+async function composeWS(){
+  if(!S.wskey){openSettingsMsg();throw new Error("NO_WSKEY");}
+  const g=GENRES.find(x=>x[0]===S.genre);const genreTxt=S.genre==="Otro"?(S.genreOther||"pop pegadizo"):S.genre;const v=VOICES.find(x=>x[0]===S.voices);
+  const lang={ar:"español rioplatense de Argentina, con voseo",neutro:"español neutro latinoamericano, sin voseo",en:"inglés"}[S.lang];
+  const fmt=S.dur<=30?"un JINGLE publicitario de unos 30 segundos: [Intro] corta, [Verse] de 4 líneas, [Chorus] de 4 líneas con el gancho y [Outro] con la marca. Máximo 12 líneas cantadas.":
+    S.dur<=60?"una canción de 1 minuto: [Intro], [Verse] (4 líneas), [Chorus] (4 líneas), [Verse 2] (4 líneas), [Chorus], [Outro].":
+    "una canción completa: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Pre-Chorus], [Chorus], [Bridge], [Chorus], [Outro].";
+  const voiceRule=S.voices==="Dúo"?"Es un dúo: marcá quién canta en cada etiqueta, por ejemplo [Verse 1: Male Vocal], [Verse 2: Female Vocal], [Chorus: Duet].":S.voices==="Con coro"?"Voz principal con coro: en los estribillos usá [Chorus: Group Vocals].":`Canta una sola voz ${S.voices==="Mujer"?"femenina":"masculina"}.`;
+  const prompt=`Sos un compositor profesional de jingles y canciones pegadizas. Escribí ${fmt}
+Idea: """${S.idea.trim()}"""
+${S.hook.trim()?`El estribillo tiene que incluir tal cual esta frase: "${S.hook.trim()}".`:"Inventá un gancho corto y memorable."}
+Género: ${genreTxt}. Idioma de la letra: ${lang}. ${voiceRule}
+Etiquetas de sección en inglés entre corchetes. Rimas naturales, versos cortos y cantables. Números escritos como se cantan. Si faltan datos, inventá algo verosímil.
+Además, "estilo": tags en inglés separados por comas (máximo 180 caracteres) con género, instrumentos, bpm aproximado, tipo de voz (${v[1]}) y ánimo${g&&g[1]?`; basate en: ${g[1]}`:""}.
+Respondé SOLO JSON: {"titulo":"...","estilo":"...","letra":"letra completa con \n"}`;
+  lastLog=[];logEv("POST llm.wavespeed.ai chat/completions");
+  let r;try{r=await fetch("https://llm.wavespeed.ai/v1/chat/completions",{method:"POST",headers:{"Authorization":"Bearer "+S.wskey,"Content-Type":"application/json"},
+    body:JSON.stringify({model:"deepseek/deepseek-chat-v3.1",messages:[{role:"user",content:prompt}],temperature:.9,response_format:{type:"json_object"}})});}
+  catch(e){logEv("fetch error: "+e.message);throw new Error("WS_FETCH");}
+  const t=await r.text();logEv("HTTP "+r.status+": "+t.slice(0,300));
+  if(!r.ok)throw new Error("WS_HTTP "+r.status+" "+t.slice(0,150));
+  let content="";try{content=JSON.parse(t).choices[0].message.content;}catch(e){throw new Error("WS respuesta rara");}
+  const m=content.match(/\{[\s\S]*\}/);let j;try{j=JSON.parse(m?m[0]:content);}catch(e){throw new Error("WS no devolvió JSON");}
+  return {caption:String(j.estilo||`${g?g[1]:genreTxt}, ${v[1]}`),lyrics:String(j.letra||"").replace(/\\n/g,"\n").trim(),bpm:0,key:"",ts:"",lang:vlang(),idea:S.idea,title:j.titulo||""};
+}
+function openSettingsMsg(){$("openSet").onclick();}
+
 /* step 1: compose lyrics with ACE-Step's own LM */
 function describe(){
   const g=GENRES.find(x=>x[0]===S.genre);const genre=S.genre==="Otro"?(S.genreOther||"catchy pop"):`${S.genre} (${g[1]})`;
@@ -238,6 +301,7 @@ $("compose").onclick=async()=>{
   if(!S.idea.trim()){m.className="msg err";m.textContent="Escribí primero la idea de la canción.";$("idea").focus();return;}
   const b=$("compose");b.disabled=true;b.textContent="Componiendo…";m.textContent="Arrancando…";
   try{
+    if(S.prov==="ws"){m.textContent="La IA está escribiendo la letra…";S.draft=await composeWS();if(!S.draft.lyrics)throw new Error("WS sin letra");save();showDraft();m.className="msg ok";m.textContent="¡Letra lista! Revisala y tocá Cantar.";$("step2").scrollIntoView({behavior:"smooth",block:"start"});return;}
     const r=await run("/handle_create_sample_wrapper",{query:describe(),instrumental:false,vocal_lang:vlang(),temp:.85,top_k:0,top_p:.9,debug:false},t=>{if(t)m.textContent=t;else m.textContent="La IA está escribiendo la letra…";});
     const val=x=>x&&typeof x==="object"&&"value" in x?x.value:x;
     const [caption,lyrics,bpm,dur,key,lang1,lang2,ts]=r.map(val);
@@ -247,7 +311,7 @@ $("compose").onclick=async()=>{
     S.draft={caption:cap,lyrics:String(lyrics).trim(),bpm:+bpm||0,key:key||"",ts:ts||"",lang:(lang1&&lang1!=="unknown")?lang1:vlang(),idea:S.idea};
     save();showDraft();m.className="msg ok";m.textContent="¡Letra lista! Revisala y tocá Cantar.";
     $("step2").scrollIntoView({behavior:"smooth",block:"start"});
-  }catch(e){m.className="msg err";m.textContent=niceErr(e)+" Podés probar el modo directo de abajo, donde la IA escribe y canta en un solo paso.";client=null;$("directBox").classList.remove("hide");showLog("log1");}
+  }catch(e){m.className="msg err";m.textContent=niceErr(e)+(S.prov!=="ws"?" Podés probar el modo directo de abajo, donde la IA escribe y canta en un solo paso.":"");client=null;if(S.prov!=="ws")$("directBox").classList.remove("hide");showLog("log1");}
   finally{b.disabled=false;b.textContent="✍️ Componer letra";}
 };
 function showDraft(){if(!S.draft)return;$("step2").classList.remove("hide");$("caption").value=S.draft.caption;$("lyrics").value=S.draft.lyrics;}
@@ -287,11 +351,17 @@ $("sing").onclick=async()=>{
   const t0=Date.now();let base="Preparando…";
   timer=setInterval(()=>{m.textContent=`${base} · ${Math.round((Date.now()-t0)/1000)} s`;},500);
   try{
+    let urls;
+    if(S.prov==="ws"){
+      if(d.simple||!d.lyrics.trim()||d.lyrics.startsWith("(la IA")){throw new Error("NEED_LYRICS");}
+      urls=[];for(let k=0;k<S.batch;k++){base=S.batch>1?`Versión ${k+1} de ${S.batch}…`:base;urls.push(...await runWS(d,t=>{base=(S.batch>1?`Versión ${k+1}/${S.batch} · `:"")+t;}));}
+    }else{
     const gd=genData(d);if(d.simple){gd.generation_mode="simple";gd.simple_query_input=describe();gd.simple_vocal_language=vlang();gd.param_4="";gd.param_5="";}
     const r=await run("/generation_wrapper",gd,(t)=>{base=t||"Generando la música y las voces…";});
-    const urls=findAudios(r);
+    urls=findAudios(r);
     if(d.simple){const strs=[];const w=x=>{if(typeof x==="string")strs.push(x);else if(Array.isArray(x))x.forEach(w);else if(x&&typeof x==="object"&&"value" in x)w(x.value);};w(r);
       const ly=strs.find(t=>/\[(verse|chorus|intro)/i.test(t));if(ly){d.lyrics=ly;$("lyrics").value=ly;}}
+    }
     if(!urls.length)throw new Error("El servidor no devolvió audio");
     const song={title:(d.idea||"Canción").slice(0,60),genre:S.genre==="Otro"?S.genreOther:S.genre,at:Date.now(),urls,caption:d.caption,lyrics:d.lyrics};
     S.hist=[song,...(S.hist||[])].slice(0,15);save();

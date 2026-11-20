@@ -131,8 +131,8 @@ const GENRES=[["Cumbia","argentine cumbia, accordion, güira, bass"],["Cuarteto"
 const VOICES=[["Mujer","female vocals","a female singer"],["Hombre","male vocals","a male singer"],["Dúo","male and female duet","a male and female duet, alternating verses"],["Con coro","lead vocals with group chorus","a lead singer with a group chorus"]];
 const DURS=[[30,"Jingle 30 s"],[60,"1 minuto"],[120,"2 minutos"],[180,"3 minutos"]];
 const LANGS=[["ar","Español Argentina"],["neutro","Español neutro"],["en","Inglés"]];
-let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:2,draft:null,hist:[]};
-try{const s=JSON.parse(localStorage.getItem("jingle-studio")||"null");if(s)S=Object.assign(S,s);}catch(e){}
+let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:1,v:3,draft:null,hist:[]};
+try{const s=JSON.parse(localStorage.getItem("jingle-studio")||"null");if(s){S=Object.assign(S,s);if(s.v!==3){S.batch=1;S.v=3;}}}catch(e){}
 const save=()=>{try{localStorage.setItem("jingle-studio",JSON.stringify(S))}catch(e){}};
 
 function chips(el,items,isOn,on){el.innerHTML="";items.forEach(([v,l])=>{const b=document.createElement("button");b.className="chip"+(isOn(v)?" on":"");b.textContent=l;b.onclick=()=>on(v);el.appendChild(b);});}
@@ -168,6 +168,7 @@ async function getClient(onMsg){
 }
 function niceErr(e){
   const t=String((e&&(e.message||e.title||e.original_msg))||e||"");
+  if(t==="SIN_DETALLE")return S.token?"El servidor rechazó el pedido sin dar el motivo. Puede estar saturado: probá en unos minutos, o con una duración más corta.":"El servidor gratis rechazó el pedido sin decir el motivo. Casi siempre es porque sin cuenta el cupo de GPU es mínimo. Solución gratis: cargá un token de Hugging Face en ⚙ Ajustes (te explico ahí cómo sacarlo).";
   if(/quota|ZeroGPU|exceeded|GPU limit/i.test(t))return "Se terminó el cupo gratis de hoy del servidor. Probá más tarde, o cargá tu token gratis de Hugging Face en ⚙ Ajustes para tener más cupo.";
   if(/sleep|paused|building|not running|Space metadata|could not resolve|Failed to fetch|NetworkError|fetch/i.test(t))return "No pude conectar con el servidor de música. Puede estar dormido o saturado: esperá un minuto y probá de nuevo.";
   if(/token|401|403|unauthorized/i.test(t))return "El token de Hugging Face no es válido. Revisalo en ⚙ Ajustes (o borralo para usar el modo sin token).";
@@ -208,7 +209,7 @@ async function run(endpoint,data,onStatus){
     let d=null;try{d=JSON.parse(dataStr);}catch(e){d=dataStr;}
     if(event==="complete"){result=d;}
     else if(event==="generating"){last=d;onStatus&&onStatus(null);}
-    else if(event==="error"){errMsg=(d&&typeof d==="object"?(d.message||d.error||JSON.stringify(d)):d)||"error del servidor (sin detalle)";}
+    else if(event==="error"){errMsg=(d&&typeof d==="object"?(d.message||d.error||JSON.stringify(d)):d)||"SIN_DETALLE";}
     else if(event==="log"&&d&&d.log){if(/quota|ZeroGPU/i.test(d.log))errMsg=d.log;}
   };
   for(;;){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});

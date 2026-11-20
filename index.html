@@ -118,6 +118,9 @@ label.l{display:block;color:var(--mut);font-size:12.5px;margin:14px 0 7px;text-t
     <label class="l">Clave de WaveSpeed</label>
     <input type="password" id="wskey" placeholder="Pegá tu API key de WaveSpeed" autocomplete="off">
     <div class="note">Gratis para empezar: entrá a <a href="https://wavespeed.ai" target="_blank" rel="noopener">wavespeed.ai</a> con tu cuenta de Google, te regalan $1 sin tarjeta. Andá a <a href="https://wavespeed.ai/accesskey" target="_blank" rel="noopener">wavespeed.ai/accesskey</a>, creá una key y pegala acá. Un jingle de 30 s cuesta menos de 1 centavo. Queda guardada solo en este dispositivo.</div>
+    <label class="l">Puente (proxy) para WaveSpeed</label>
+    <input type="text" id="proxy" placeholder="https://jingle-proxy.TU-USUARIO.workers.dev" autocomplete="off">
+    <div class="note">WaveSpeed no deja que una página web lo llame directo, así que hace falta un "puente" gratis en Cloudflare. Se arma una sola vez: mirá los pasos en el chat con Claude o en el archivo <a href="https://github.com/adhernandezProyectoX/jingle-studio/blob/main/worker.js" target="_blank" rel="noopener">worker.js</a>.</div>
     <label class="l">Token de Hugging Face <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional, gratis)</span></label>
     <input type="password" id="token" placeholder="hf_…" autocomplete="off">
     <div class="note">Sin token funciona, pero con un límite chico de canciones por día. Con una cuenta gratis de Hugging Face tenés más: entrá a <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>, creá un token de tipo "Read" y pegalo acá. Queda guardado solo en este dispositivo.</div>
@@ -136,7 +139,7 @@ const GENRES=[["Cumbia","argentine cumbia, accordion, güira, bass"],["Cuarteto"
 const VOICES=[["Mujer","female vocals","a female singer"],["Hombre","male vocals","a male singer"],["Dúo","male and female duet","a male and female duet, alternating verses"],["Con coro","lead vocals with group chorus","a lead singer with a group chorus"]];
 const DURS=[[30,"Jingle 30 s"],[60,"1 minuto"],[120,"2 minutos"],[180,"3 minutos"]];
 const LANGS=[["ar","Español Argentina"],["neutro","Español neutro"],["en","Inglés"]];
-let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:1,v:3,prov:"ws",wskey:"",draft:null,hist:[]};
+let S={idea:"",hook:"",genre:"Cumbia",genreOther:"",voices:"Dúo",dur:30,lang:"ar",token:"",space:"ACE-Step/Ace-Step-v1.5",batch:1,v:3,prov:"ws",wskey:"",proxy:"",draft:null,hist:[]};
 try{const s=JSON.parse(localStorage.getItem("jingle-studio")||"null");if(s){S=Object.assign(S,s);if(s.v!==3){S.batch=1;S.v=3;}}}catch(e){}
 const save=()=>{try{localStorage.setItem("jingle-studio",JSON.stringify(S))}catch(e){}};
 
@@ -158,8 +161,8 @@ $("caption").oninput=e=>{if(S.draft){S.draft.caption=e.target.value;save();}};
 $("lyrics").oninput=e=>{if(S.draft){S.draft.lyrics=e.target.value;save();}};
 
 /* settings */
-$("openSet").onclick=()=>{$("wskey").value=S.wskey||"";$("token").value=S.token;$("space").value=S.space;$("setModal").classList.remove("hide");};
-$("closeSet").onclick=()=>{S.wskey=$("wskey").value.trim();S.token=$("token").value.trim();S.space=$("space").value.trim()||"ACE-Step/Ace-Step-v1.5";save();client=null;$("setModal").classList.add("hide");};
+$("openSet").onclick=()=>{$("wskey").value=S.wskey||"";$("proxy").value=S.proxy||"";$("token").value=S.token;$("space").value=S.space;$("setModal").classList.remove("hide");};
+$("closeSet").onclick=()=>{S.wskey=$("wskey").value.trim();S.proxy=$("proxy").value.trim().replace(/\/+$/,"");if(S.proxy&&!/^https?:\/\//.test(S.proxy))S.proxy="https://"+S.proxy;S.token=$("token").value.trim();S.space=$("space").value.trim()||"ACE-Step/Ace-Step-v1.5";save();client=null;$("setModal").classList.add("hide");};
 $("setModal").onclick=e=>{if(e.target.id==="setModal")$("closeSet").onclick();};
 
 /* gradio */
@@ -176,7 +179,7 @@ function niceErr(e){
   const t=String((e&&(e.message||e.title||e.original_msg))||e||"");
   if(t==="NEED_LYRICS")return "Con WaveSpeed primero hay que tener la letra: tocá Componer letra arriba (o escribila vos).";
   if(t==="NO_WSKEY")return "Falta la clave de WaveSpeed: pegala en ⚙ Ajustes (es gratis para empezar).";
-  if(t==="WS_FETCH")return "No pude conectar con WaveSpeed. Revisá tu conexión y probá de nuevo.";
+  if(t==="WS_FETCH")return S.proxy?"No pude conectar con el puente o con WaveSpeed. Revisá la dirección del puente en ⚙ Ajustes.":"El navegador bloqueó la conexión directa con WaveSpeed. Hace falta armar el puente gratis de Cloudflare (una sola vez) y pegar su dirección en ⚙ Ajustes.";
   if(/^WS_HTTP 401|^WS_HTTP 403/.test(t))return "WaveSpeed rechazó la clave. Revisala en ⚙ Ajustes.";
   if(/^WS_HTTP 402|insufficient|balance/i.test(t))return "Se terminó el saldo de WaveSpeed. Podés cargar crédito en wavespeed.ai.";
   if(/^WS/.test(t))return "WaveSpeed devolvió un error ("+t.slice(0,160)+").";
@@ -235,12 +238,13 @@ async function run(endpoint,data,onStatus){
   return fix(out);
 }
 
+const P=u=>S.proxy?`${S.proxy}/?u=${encodeURIComponent(u)}`:u;
 async function runWS(d,onStatus){
   if(!S.wskey){openSettingsMsg();throw new Error("NO_WSKEY");}
   const H={"Authorization":"Bearer "+S.wskey,"Content-Type":"application/json"};
   lastLog=[];const body={tags:d.caption,lyrics:d.lyrics,duration:Math.min(240,Math.max(5,S.dur)),seed:-1};
   logEv("POST wavespeed ace-step-1.5 "+JSON.stringify({tags:body.tags.slice(0,80),duration:body.duration}));
-  let r;try{r=await fetch("https://api.wavespeed.ai/api/v3/wavespeed-ai/ace-step-1.5",{method:"POST",headers:H,body:JSON.stringify(body)});}
+  let r;try{r=await fetch(P("https://api.wavespeed.ai/api/v3/wavespeed-ai/ace-step-1.5"),{method:"POST",headers:H,body:JSON.stringify(body)});}
   catch(e){logEv("fetch error: "+e.message);throw new Error("WS_FETCH");}
   const t=await r.text();logEv("HTTP "+r.status+": "+t.slice(0,300));
   let j={};try{j=JSON.parse(t);}catch(e){}
@@ -249,7 +253,7 @@ async function runWS(d,onStatus){
   const t0=Date.now();let wait=1500;
   for(;;){
     await new Promise(z=>setTimeout(z,wait));wait=Math.min(5000,wait+500);
-    const p=await fetch(`https://api.wavespeed.ai/api/v3/predictions/${id}/result`,{headers:{"Authorization":"Bearer "+S.wskey}});
+    let p;try{p=await fetch(P(`https://api.wavespeed.ai/api/v3/predictions/${id}/result`),{headers:{"Authorization":"Bearer "+S.wskey}});}catch(e){logEv("poll error: "+e.message);continue;}
     const pt=await p.text();let pj={};try{pj=JSON.parse(pt);}catch(e){}
     const dd=pj.data||pj;const st=dd.status;
     if(st!=="processing"&&st!=="created")logEv("status "+st+": "+pt.slice(0,300));
@@ -275,7 +279,7 @@ Etiquetas de sección en inglés entre corchetes. Rimas naturales, versos cortos
 Además, "estilo": tags en inglés separados por comas (máximo 180 caracteres) con género, instrumentos, bpm aproximado, tipo de voz (${v[1]}) y ánimo${g&&g[1]?`; basate en: ${g[1]}`:""}.
 Respondé SOLO JSON: {"titulo":"...","estilo":"...","letra":"letra completa con \n"}`;
   lastLog=[];logEv("POST llm.wavespeed.ai chat/completions");
-  let r;try{r=await fetch("https://llm.wavespeed.ai/v1/chat/completions",{method:"POST",headers:{"Authorization":"Bearer "+S.wskey,"Content-Type":"application/json"},
+  let r;try{r=await fetch(P("https://llm.wavespeed.ai/v1/chat/completions"),{method:"POST",headers:{"Authorization":"Bearer "+S.wskey,"Content-Type":"application/json"},
     body:JSON.stringify({model:"deepseek/deepseek-chat-v3.1",messages:[{role:"user",content:prompt}],temperature:.9,response_format:{type:"json_object"}})});}
   catch(e){logEv("fetch error: "+e.message);throw new Error("WS_FETCH");}
   const t=await r.text();logEv("HTTP "+r.status+": "+t.slice(0,300));
